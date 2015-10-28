@@ -28,8 +28,27 @@ public: int task_id;
 
 class runningtasktype :public tasktype
 {
-	double bandwidthup, bandwidthdown;
-	queue<devicetype> path;
+public:double bandwidthup, bandwidthdown;
+	vector<devicetype> path;
+	int state;
+	/* state=0 just create;
+	   state=1 uploading tasks;
+	   state=2 running tasks;
+	   state=3 downloading tasks	
+	*/
+
+
+	runningtasktype(tasktype a)
+	{
+		cpu_consumption = a.cpu_consumption;
+		bandwidthdown_consumption = a.bandwidthdown_consumption;
+		bandwidthup_consumption = a.bandwidthup_consumption;
+		latency_requirement = a.latency_requirement;
+		state = 0;
+	}
+
+	runningtasktype(){}
+
 };
 
 class devicetype
@@ -54,7 +73,7 @@ public:
 	double bandwidthdown_parameter;
 	//time to live for each mobile device
 	double ttl;
-	list<runningtasktype> tasks = list<runningtasktype>();
+	runningtasktype tasks;
 	// denote the node that can reach in 1 step, the cost means the latency
 	map<int, double> reach;
 	// betweeness
@@ -70,6 +89,7 @@ public:
 		device_id = device_idfield;
 		device_idfield++;
 		availability[device_id] = true;
+		tasks.task_genid = -1;
 	}
 
 };
@@ -193,7 +213,7 @@ class forsearchtype :public devicetype,public tasktype
 {
 public:double cost;
 	double upspeed, downspeed;
-	queue<devicetype> path;
+	vector<devicetype> path;
 	forsearchtype()
 	{
 	}
@@ -273,7 +293,62 @@ int main()
 		for (list<devicetype>::iterator itr = cloudlet.begin(); itr != cloudlet.end(); itr++)
 		{
 			itr->device_power = itr->device_power-itr->decrease;
+			if (itr->tasks.task_genid!=-1)
+			{
+				if (itr->tasks.state == 0) // just create 
+				{
+					if (itr->tasks.bandwidthup_consumption == 0)
+					{
+						itr->tasks.state = 2;
+						continue;
+					}
+					for (int i = 0; i < itr->tasks.path.size(); i++)
+					{
+						itr->tasks.path[i].bandwidthup -= itr->tasks.bandwidthup;
+					}
+					itr->tasks.state = 1;
+					itr->tasks.bandwidthup_consumption -= itr->tasks.bandwidthup;
+					if (itr->tasks.bandwidthup_consumption <= 0)
+						itr->tasks.state = 2;
+				}
+				else if (itr->tasks.state == 1) // uploading
+				{
+					itr->tasks.bandwidthup_consumption -= itr->tasks.bandwidthup;
+					if (itr->tasks.bandwidthup_consumption <= 0)
+					{
+						itr->tasks.state = 2;
+						for (int i = 0; i < itr->tasks.path.size(); i++)
+						{
+							itr->tasks.path[i].bandwidthup += itr->tasks.bandwidthup;
+						}
+					}
+						
+				}
+				else if (itr->tasks.state == 2) //running
+				{
+					itr->tasks.cpu_consumption -= itr->cpu_speed;
+					if (itr->tasks.cpu_consumption <= 0)
+					{
+						itr->tasks.state = 3;
+						for (int i = 0; i < itr->tasks.path.size(); i++)
+						{
+							itr->tasks.path[i].bandwidthdown -= itr->tasks.bandwidthdown;
+						}
+					}
+				}
+				else if (itr->tasks.state == 3)
+				{
+					itr->tasks.bandwidthdown_consumption -= itr->tasks.bandwidthdown;
+					if (itr->tasks.bandwidthdown_consumption<=0)
+					{
+						for (int i = 0; i < itr->tasks.path.size(); i++)
+						{
+							itr->tasks.path[i].bandwidthdown += itr->tasks.bandwidthdown;
+						}
+					}
+				}
 
+			}
 		}
 		if (optime == time)
 		{
@@ -405,7 +480,7 @@ int main()
 									  forsearchtype insertnode = nodetask;
 									  insertnode.updatedevice(queuenode);
 									  insertnode.path = tempqueuenode.path;
-									  insertnode.path.push(queuenode);
+									  insertnode.path.push_back(queuenode);
 									  insertnode.upspeed = min(nodetask.bandwidthup, nodetask.upspeed);
 									  insertnode.downspeed = min(nodetask.bandwidthdown, nodetask.downspeed);
 									  insertnode.cost += bandttldecrease*(queuenode.importance + queuenode.future/mobiledevice.size() + 1 / (queuenode.ttl - bandttldecrease))/(1-queuenode.leave_probability);
@@ -424,17 +499,22 @@ int main()
 								  target = i;
 							  }
 						  }
-						  for (int i = 1; i < answer[i].path.size(); i++)
+						  for (int i = 1; i < answer[target].path.size(); i++)
 						  {
-							  list<devicetype> ::iterator myitr = getcloudlet(answer[target].path.front().device_id);
+							  list<devicetype> ::iterator myitr = getcloudlet(answer[target].path[i].device_id);
 							  double bandttldecrease = task.bandwidthup_consumption*answer[target].bandwidthup_parameter / answer[target].bandwidthup
 								  + task.bandwidthdown_consumption*answer[target].bandwidthdown_parameter / answer[target].bandwidthdown;
 							  myitr->ttl = myitr->ttl-bandttldecrease;
-							  answer[target].path.pop();
 						  }
 						  double cputtldecrease = task.cpu_consumption*answer[target].cpu_parameter / answer[target].decrease;
 						  list<devicetype> ::iterator myitr = getcloudlet(answer[target].device_id);
 						  myitr->ttl = myitr->ttl - cputtldecrease;
+						  runningtasktype runningtask(task);
+						  runningtask.path = answer[target].path;
+						  runningtask.bandwidthup = answer[target].bandwidthup;
+						  runningtask.bandwidthdown = answer[target].bandwidthdown;
+						  myitr->tasks=runningtask;
+						  availability[myitr->device_id] = false;
 						  // cpu and network busy state
 				}
 			}
