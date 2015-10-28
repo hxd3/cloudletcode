@@ -29,7 +29,7 @@ public: int task_id;
 class runningtasktype :public tasktype
 {
 public:double bandwidthup, bandwidthdown;
-	vector<devicetype> path;
+	vector<int> path;
 	int state;
 	/* state=0 just create;
 	   state=1 uploading tasks;
@@ -209,11 +209,12 @@ list<devicetype> ::iterator getmobiledevice(int id)
 		}
 	}
 }
+
 class forsearchtype :public devicetype,public tasktype
 {
 public:double cost;
 	double upspeed, downspeed;
-	vector<devicetype> path;
+	vector<int> path;
 	forsearchtype()
 	{
 	}
@@ -293,6 +294,7 @@ int main()
 		for (list<devicetype>::iterator itr = cloudlet.begin(); itr != cloudlet.end(); itr++)
 		{
 			itr->device_power = itr->device_power-itr->decrease;
+			itr->ttl--;
 			if (itr->tasks.task_genid!=-1)
 			{
 				if (itr->tasks.state == 0) // just create 
@@ -304,12 +306,12 @@ int main()
 					}
 					for (int i = 0; i < itr->tasks.path.size(); i++)
 					{
-						itr->tasks.path[i].bandwidthup -= itr->tasks.bandwidthup;
+						//itr->tasks.path[i].bandwidthup -= itr->tasks.bandwidthup;
+						list<devicetype> ::iterator temp = getcloudlet(itr->tasks.path[i]);
+						temp->bandwidthup -= itr->tasks.bandwidthup;
 					}
 					itr->tasks.state = 1;
 					itr->tasks.bandwidthup_consumption -= itr->tasks.bandwidthup;
-					if (itr->tasks.bandwidthup_consumption <= 0)
-						itr->tasks.state = 2;
 				}
 				else if (itr->tasks.state == 1) // uploading
 				{
@@ -319,7 +321,9 @@ int main()
 						itr->tasks.state = 2;
 						for (int i = 0; i < itr->tasks.path.size(); i++)
 						{
-							itr->tasks.path[i].bandwidthup += itr->tasks.bandwidthup;
+							//itr->tasks.path[i].bandwidthup += itr->tasks.bandwidthup;
+							list<devicetype> ::iterator temp = getcloudlet(itr->tasks.path[i]);
+							temp->bandwidthup += itr->tasks.bandwidthup;
 						}
 					}
 						
@@ -332,7 +336,8 @@ int main()
 						itr->tasks.state = 3;
 						for (int i = 0; i < itr->tasks.path.size(); i++)
 						{
-							itr->tasks.path[i].bandwidthdown -= itr->tasks.bandwidthdown;
+							list<devicetype> ::iterator temp = getcloudlet(itr->tasks.path[i]);
+							temp->bandwidthdown -= itr->tasks.bandwidthdown;
 						}
 					}
 				}
@@ -343,8 +348,11 @@ int main()
 					{
 						for (int i = 0; i < itr->tasks.path.size(); i++)
 						{
-							itr->tasks.path[i].bandwidthdown += itr->tasks.bandwidthdown;
+							list<devicetype> ::iterator temp = getcloudlet(itr->tasks.path[i]);
+							temp->bandwidthdown += itr->tasks.bandwidthdown;
 						}
+						itr->tasks.task_genid = -1;
+						availability[itr->device_id] = true;
 					}
 				}
 
@@ -480,7 +488,7 @@ int main()
 									  forsearchtype insertnode = nodetask;
 									  insertnode.updatedevice(queuenode);
 									  insertnode.path = tempqueuenode.path;
-									  insertnode.path.push_back(queuenode);
+									  insertnode.path.push_back(queuenode.device_id);
 									  insertnode.upspeed = min(nodetask.bandwidthup, nodetask.upspeed);
 									  insertnode.downspeed = min(nodetask.bandwidthdown, nodetask.downspeed);
 									  insertnode.cost += bandttldecrease*(queuenode.importance + queuenode.future/mobiledevice.size() + 1 / (queuenode.ttl - bandttldecrease))/(1-queuenode.leave_probability);
@@ -499,9 +507,9 @@ int main()
 								  target = i;
 							  }
 						  }
-						  for (int i = 1; i < answer[target].path.size(); i++)
+						  for (int i = 0; i < answer[target].path.size(); i++)
 						  {
-							  list<devicetype> ::iterator myitr = getcloudlet(answer[target].path[i].device_id);
+							  list<devicetype> ::iterator myitr = getcloudlet(answer[target].path[i]);
 							  double bandttldecrease = task.bandwidthup_consumption*answer[target].bandwidthup_parameter / answer[target].bandwidthup
 								  + task.bandwidthdown_consumption*answer[target].bandwidthdown_parameter / answer[target].bandwidthdown;
 							  myitr->ttl = myitr->ttl-bandttldecrease;
@@ -511,10 +519,15 @@ int main()
 						  myitr->ttl = myitr->ttl - cputtldecrease;
 						  runningtasktype runningtask(task);
 						  runningtask.path = answer[target].path;
-						  runningtask.bandwidthup = answer[target].bandwidthup;
-						  runningtask.bandwidthdown = answer[target].bandwidthdown;
+						  runningtask.bandwidthup = answer[target].upspeed;
+						  runningtask.bandwidthdown = answer[target].downspeed;
 						  myitr->tasks=runningtask;
 						  availability[myitr->device_id] = false;
+						  for (list<devicetype> ::iterator itr = cloudlet.begin(); itr != cloudlet.end(); itr++)
+						  {
+							  cout << itr->ttl << " ";
+						  }
+						  cout <<answer[target].device_id<<"  "<< endl;
 						  // cpu and network busy state
 				}
 			}
@@ -529,7 +542,8 @@ int main()
 	input.close();
 	for (list<devicetype> ::iterator itr = cloudlet.begin(); itr != cloudlet.end(); itr++)
 	{
-
+		  
 	}
+	system("pause");
 	return 0;
 }
